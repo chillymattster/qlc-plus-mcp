@@ -1,0 +1,35 @@
+{
+  "name": "qlc-plus-mcp",
+  "version": "1.0.0",
+  "type": "module",
+  "bin": {
+    "qlc-plus-mcp": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:verbose": "jest --verbose",
+    "test:ci": "jest --ci --coverage --watchAll=false"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@types/ws": "^8.18.1",
+    "axios": "^1.6.0",
+    "fast-xml-parser": "^5.3.0",
+    "form-data": "^4.0.4",
+    "osc-js": "^2.4.1",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@jest/globals": "^30.1.2",
+    "@types/form-data": "^2.2.1",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^20.0.0",
+    "jest": "^30.1.3",
+    "ts-jest": "^29.4.4",
+    "typescript": "^5.3.0"
+  }
+}
