@@ -4,6 +4,8 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { QLCClient } from './qlc-client.js';
 import { AudioAnalyzer } from './audio-analyzer.js';
+import { realpathSync } from 'fs';
+import { pathToFileURL } from 'url';
 
 const client = new QLCClient({
   host: process.env.QLC_HOST || 'localhost',
@@ -914,8 +916,27 @@ export async function main() {
   console.error(`Connecting to QLC+ at ${process.env.QLC_HOST || 'localhost'}:${process.env.QLC_PORT || '9999'}`);
 }
 
-// Only auto-launch when run directly, not when imported by tests.
-// Jest sets NODE_ENV=test automatically.
-if (process.env.NODE_ENV !== 'test') {
-  main().catch(console.error);
+// Entry-point gate. Only auto-launch main() when this file IS the process
+// entry (i.e. invoked as `node dist/index.js` or via the `qlc-plus-mcp`
+// bin shim), NOT when it is `import()`-ed by the test suite or any other
+// tool that happens to embed us. We compare the realpath of process.argv[1]
+// (resolved to a file:// URL) against import.meta.url so that no other
+// process whose entry happens to be named `index.js` can accidentally
+// auto-launch the MCP stdio server inside itself.
+const isEntryPoint = (() => {
+  if (!process.argv[1]) return false;
+  try {
+    const argvHref = pathToFileURL(realpathSync(process.argv[1])).href;
+    const moduleHref = import.meta.url;
+    return argvHref === moduleHref;
+  } catch {
+    return false;
+  }
+})();
+
+if (isEntryPoint) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
 }

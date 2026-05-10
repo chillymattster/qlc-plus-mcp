@@ -1,25 +1,36 @@
-import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
+import { describe, it, expect, beforeEach, afterEach, beforeAll, jest } from '@jest/globals';
+import { XMLParser } from 'fast-xml-parser';
 
-// Mock ws BEFORE importing anything that uses it transitively.
-// jest.mock is hoisted, so imported values would be undefined here —
-// require() inside the factory is the standard workaround.
-jest.mock('ws', () => ({
-  __esModule: true,
-  default: require('../mocks/websocket.mock').MockWebSocket,
-}));
+// Use jest.unstable_mockModule for ESM-aware module mocking. Unlike `jest.mock`
+// (which doesn't reliably intercept ESM imports under ts-jest's default-esm
+// preset), `unstable_mockModule` registers the mock against Jest's ESM module
+// loader BEFORE we dynamically import the system under test below. See
+// KNOWN_ISSUES.md (bucket 1) for the historical context.
+jest.unstable_mockModule('ws', async () => {
+  const { MockWebSocket } = await import('../mocks/websocket.mock.js');
+  return {
+    __esModule: true,
+    default: MockWebSocket,
+    WebSocket: MockWebSocket,
+  };
+});
 
-import { QLCClient } from '../../src/qlc-client.js';
-import { QLCConfig } from '../../src/types.js';
-import { MockWebSocket } from '../mocks/websocket.mock.js';
-import { fetchMock } from '../mocks/fetch.mock.js';
+// Module-scope bindings populated in beforeAll after the mock is registered.
+let QLCClient: typeof import('../../src/qlc-client.js').QLCClient;
+let MockWebSocket: typeof import('../mocks/websocket.mock.js').MockWebSocket;
+let fetchMock: typeof import('../mocks/fetch.mock.js').fetchMock;
+type QLCConfig = import('../../src/types.js').QLCConfig;
 
-// SKIPPED: jest.mock('ws', ...) does not reliably intercept ESM imports under
-// ts-jest's ESM preset, so MockWebSocket is bypassed and the real ws module
-// loads — causing every happy-path call to time out and report success: false.
-// The runtime code works against real QLC+ instances. Tracked in KNOWN_ISSUES.md
-// as bucket 1 (proper fix is migrating to jest.unstable_mockModule or vitest).
-describe.skip('QLCClient', () => {
-  let client: QLCClient;
+beforeAll(async () => {
+  // Dynamic imports MUST come AFTER unstable_mockModule registration above so
+  // qlc-client picks up the mocked `ws` instead of the real one.
+  ({ QLCClient } = await import('../../src/qlc-client.js'));
+  ({ MockWebSocket } = await import('../mocks/websocket.mock.js'));
+  ({ fetchMock } = await import('../mocks/fetch.mock.js'));
+});
+
+describe('QLCClient', () => {
+  let client: InstanceType<typeof QLCClient>;
   let config: QLCConfig;
 
   beforeEach(() => {
@@ -303,66 +314,67 @@ describe.skip('QLCClient', () => {
 
   describe('Error Handling', () => {
     it('should handle empty responses gracefully', async () => {
-      const originalWebSocket = (global as any).WebSocket;
-      (global as any).WebSocket = class extends MockWebSocket {
-        send(data: string | ArrayBuffer): void {
-          setTimeout(() => this.simulateMessage(''), 10);
-        }
+      const freshClient = new QLCClient(config);
+      // Stub out the next response by overriding the mock-table for the
+      // upcoming command (one-shot via setMockResponse on the next instance).
+      // Easier: just connect, then spy on any new MockWebSocket created.
+      // Simpler approach: monkey-patch MockWebSocket.prototype.send for this
+      // single test, then restore.
+      const original = MockWebSocket.prototype.send;
+      MockWebSocket.prototype.send = function (this: any) {
+        setTimeout(() => this.simulateMessage(''), 5);
       };
-
-      const result = await client.getFunctionsList();
-      expect(result.success).toBe(true);
-      expect(Array.isArray(result.data)).toBe(true);
-
-      // Restore original WebSocket
-      (global as any).WebSocket = originalWebSocket;
+      try {
+        const result = await freshClient.getFunctionsList();
+        expect(result.success).toBe(true);
+        expect(Array.isArray(result.data)).toBe(true);
+      } finally {
+        MockWebSocket.prototype.send = original;
+      }
     });
 
     it('should handle HTML responses from QLC+', async () => {
-      const originalWebSocket = (global as any).WebSocket;
-      (global as any).WebSocket = class extends MockWebSocket {
-        send(data: string | ArrayBuffer): void {
-          setTimeout(() => this.simulateMessage('<html><body>QLC+ Interface</body></html>'), 10);
-        }
+      const freshClient = new QLCClient(config);
+      const original = MockWebSocket.prototype.send;
+      MockWebSocket.prototype.send = function (this: any) {
+        setTimeout(() => this.simulateMessage('<html><body>QLC+ Interface</body></html>'), 5);
       };
-
-      const result = await client.getFunctionsList();
-      expect(result.success).toBe(true);
-      expect(Array.isArray(result.data)).toBe(true);
-
-      // Restore original WebSocket
-      (global as any).WebSocket = originalWebSocket;
+      try {
+        const result = await freshClient.getFunctionsList();
+        expect(result.success).toBe(true);
+        expect(Array.isArray(result.data)).toBe(true);
+      } finally {
+        MockWebSocket.prototype.send = original;
+      }
     });
 
     it('should handle OK responses correctly', async () => {
-      const originalWebSocket = (global as any).WebSocket;
-      (global as any).WebSocket = class extends MockWebSocket {
-        send(data: string | ArrayBuffer): void {
-          setTimeout(() => this.simulateMessage('OK'), 10);
-        }
+      const freshClient = new QLCClient(config);
+      const original = MockWebSocket.prototype.send;
+      MockWebSocket.prototype.send = function (this: any) {
+        setTimeout(() => this.simulateMessage('OK'), 5);
       };
-
-      const result = await client.setFunctionStatus(1, 1);
-      expect(result.success).toBe(true);
-
-      // Restore original WebSocket
-      (global as any).WebSocket = originalWebSocket;
+      try {
+        const result = await freshClient.setFunctionStatus(1, 1);
+        expect(result.success).toBe(true);
+      } finally {
+        MockWebSocket.prototype.send = original;
+      }
     });
 
     it('should handle QLC+API pipe-delimited responses', async () => {
-      const originalWebSocket = (global as any).WebSocket;
-      (global as any).WebSocket = class extends MockWebSocket {
-        send(data: string | ArrayBuffer): void {
-          setTimeout(() => this.simulateMessage('QLC+API|getFunctionsNumber|5'), 10);
-        }
+      const freshClient = new QLCClient(config);
+      const original = MockWebSocket.prototype.send;
+      MockWebSocket.prototype.send = function (this: any) {
+        setTimeout(() => this.simulateMessage('QLC+API|getFunctionsNumber|5'), 5);
       };
-
-      const result = await client.getFunctionsNumber();
-      expect(result.success).toBe(true);
-      expect(result.data).toBe(5);
-
-      // Restore original WebSocket
-      (global as any).WebSocket = originalWebSocket;
+      try {
+        const result = await freshClient.getFunctionsNumber();
+        expect(result.success).toBe(true);
+        expect(result.data).toBe(5);
+      } finally {
+        MockWebSocket.prototype.send = original;
+      }
     });
   });
 
@@ -543,17 +555,31 @@ describe.skip('QLCClient', () => {
 
       const xml = client.generateWorkspace(config);
 
-      // Scenes should have IDs 0, 1, 2
-      const sceneIdMatch = xml.match(/Type="Scene"[^>]*ID="(\d+)"/g);
-      expect(sceneIdMatch).toBeTruthy();
-      expect(sceneIdMatch!.length).toBe(3);
+      // Parse the XML rather than regex-matching attribute strings — fast-xml-parser
+      // doesn't guarantee attribute ordering in its output, so a regex like
+      // /Type="Scene"[^>]*ID="(\d+)"/ is brittle (it returns null when ID is
+      // emitted before Type). Parsing gives us a stable structural assertion.
+      const parser = new XMLParser({
+        ignoreAttributes: false,
+        attributeNamePrefix: '@_',
+      });
+      const parsed = parser.parse(xml);
+      const functionsRaw = parsed?.Workspace?.Engine?.Function;
+      const functions: any[] = Array.isArray(functionsRaw) ? functionsRaw : functionsRaw ? [functionsRaw] : [];
 
-      // Chasers should have IDs 3, 4
-      const chaserIdMatch = xml.match(/Type="Chaser"[^>]*ID="(\d+)"/g);
-      expect(chaserIdMatch).toBeTruthy();
-      expect(chaserIdMatch!.length).toBe(2);
-      expect(xml).toContain('Type="Chaser" Name="Chase 1" ID="3"');
-      expect(xml).toContain('Type="Chaser" Name="Chase 2" ID="4"');
+      const scenes = functions.filter((f) => f['@_Type'] === 'Scene');
+      const chasers = functions.filter((f) => f['@_Type'] === 'Chaser');
+
+      // Scenes should have IDs 0, 1, 2 (sequential, in declaration order)
+      expect(scenes).toHaveLength(3);
+      expect(scenes.map((s) => String(s['@_ID']))).toEqual(['0', '1', '2']);
+
+      // Chasers should have IDs 3, 4 (continuing the function-ID sequence)
+      expect(chasers).toHaveLength(2);
+      expect(chasers.map((c) => ({ name: c['@_Name'], id: String(c['@_ID']) }))).toEqual([
+        { name: 'Chase 1', id: '3' },
+        { name: 'Chase 2', id: '4' },
+      ]);
     });
   });
 });

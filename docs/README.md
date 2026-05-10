@@ -18,7 +18,7 @@ A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that en
 ### Prerequisites
 
 - **Node.js** v20 or higher
-- **QLC+** 4.12.0 or higher installed
+- **QLC+ 4.12.0 or higher** (4.x line). QLC+ 5 is **not yet supported** — the web access module (WebSocket + `/loadProject`) was removed from stock v5 builds and the upstream port ([mcallegari/qlcplus#1879](https://github.com/mcallegari/qlcplus/issues/1879)) hasn't merged. Generated `.qxw` files still load in v5, but live control requires v4. We'll add v5 support once the upstream web API stabilizes.
 - **Claude Desktop** with MCP support
 
 ### Setup
