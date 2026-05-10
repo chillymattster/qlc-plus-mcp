@@ -907,11 +907,15 @@ server.setRequestHandler(CallToolRequestSchema, async (req: any) => {
   }
 });
 
-async function main() {
+export async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error('QLC+ MCP Server running on stdio transport');
   console.error(`Connecting to QLC+ at ${process.env.QLC_HOST || 'localhost'}:${process.env.QLC_PORT || '9999'}`);
 }
 
-main().catch(console.error);
+// Only auto-launch when run directly, not when imported by tests.
+// Jest sets NODE_ENV=test automatically.
+if (process.env.NODE_ENV !== 'test') {
+  main().catch(console.error);
+}
