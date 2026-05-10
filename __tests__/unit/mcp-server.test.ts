@@ -26,16 +26,18 @@ jest.mock('@modelcontextprotocol/sdk/types.js', () => ({
   ListToolsRequestSchema: 'list-tools'
 }));
 
-// Mock ws module
+// Mock ws module — require() inside factory because jest.mock is hoisted above imports.
 jest.mock('ws', () => ({
   __esModule: true,
-  default: MockWebSocket
+  default: require('../mocks/websocket.mock').MockWebSocket,
 }));
 
-// Mock fs/promises
+// Mock fs/promises.
+// `as never` casts work around @jest/globals' UnknownFunction strict typing —
+// the resolved values are correct at runtime.
 jest.mock('fs/promises', () => ({
-  writeFile: jest.fn().mockResolvedValue(undefined),
-  readFile: jest.fn().mockResolvedValue('{"test": "data"}')
+  writeFile: jest.fn().mockResolvedValue(undefined as never),
+  readFile: jest.fn().mockResolvedValue('{"test": "data"}' as never)
 }));
 
 describe('MCP Server', () => {
@@ -47,15 +49,16 @@ describe('MCP Server', () => {
     fetchMock.reset();
     toolHandlers = new Map();
 
-    // Capture the handlers registered with the mock server
-    mockServer.setRequestHandler.mockImplementation((schema: string, handler: Function) => {
+    // Capture the handlers registered with the mock server.
+    // `as any` impl is a concession to @jest/globals strict UnknownFunction generic.
+    mockServer.setRequestHandler.mockImplementation(((schema: string, handler: Function) => {
       if (schema === 'list-tools') {
         listToolsHandler = handler;
       } else if (schema === 'call-tool') {
         // Store the call tool handler
         toolHandlers.set('call-tool', handler);
       }
-    });
+    }) as any);
 
     // Import the server module to trigger handler registration
     await import('../../src/index.js');
@@ -122,7 +125,7 @@ describe('MCP Server', () => {
     let callToolHandler: Function;
 
     beforeEach(() => {
-      callToolHandler = toolHandlers.get('call-tool');
+      callToolHandler = toolHandlers.get('call-tool')!;
     });
 
     describe('Basic Tools', () => {

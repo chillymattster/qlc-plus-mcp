@@ -1,14 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
+
+// Mock ws BEFORE importing anything that uses it transitively (see qlc-client.test.ts for explanation).
+jest.mock('ws', () => ({
+  __esModule: true,
+  default: require('../mocks/websocket.mock').MockWebSocket,
+}));
+
 import { QLCClient } from '../../src/qlc-client.js';
 import { QLCConfig } from '../../src/types.js';
 import { MockWebSocket } from '../mocks/websocket.mock.js';
 import { fetchMock } from '../mocks/fetch.mock.js';
-
-// Mock ws module
-jest.mock('ws', () => ({
-  __esModule: true,
-  default: MockWebSocket
-}));
 
 describe('Error Handling and Edge Cases', () => {
   let client: QLCClient;

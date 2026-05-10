@@ -7,8 +7,11 @@ A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that en
 - 🎭 **WebSocket & HTTP Communication** - Real-time control of QLC+ via its web API
 - 🎨 **25 MCP Tools** - Comprehensive lighting control exposed to Claude Desktop
 - 🔄 **Effect Sequencing** - Client-side rendering of fade, strobe, chase, and color wash effects
-- 📦 **Workspace Generation** - Create QLC+ workspace files (.qxw) programmatically
-- ✅ **Full Test Coverage** - Jest-based unit tests with mocks for reliable testing
+- 📦 **Workspace Generation** - Create QLC+ workspace files (.qxw) with fixtures, scenes, and chasers
+- 🎬 **Chaser Function Creation** - Build multi-step chase sequences programmatically
+- 🤖 **Standalone Gemini agent** - REPL in `src/agent/` that lets you drive QLC+ in plain English without Claude Desktop
+- 🎵 **Audio analyzer (WIP)** - BPM and beat extraction via `wav-decoder` + `music-tempo` for tempo-synced effects
+- 🧪 **Unit tests with mocks** - 91 Jest tests across 4 suites; **52 currently passing, 39 failing.** See [KNOWN_ISSUES.md](../KNOWN_ISSUES.md) for the full inventory and fix sketches.
 
 ## Installation
 
@@ -105,7 +108,7 @@ The following 25 tools are available to Claude Desktop:
 - `qlc_animation_control` - Control Animation/RGB Matrix widgets
 
 ### Workspace & Effects
-- `qlc_generate_workspace` - Generate QLC+ workspace file (.qxw) with fixtures and scenes
+- `qlc_generate_workspace` - Generate QLC+ workspace file (.qxw) with fixtures, scenes, and optional chasers
 - `qlc_reload_workspace` - Upload and reload workspace file into QLC+
 - `qlc_create_effect_sequence` - Generate timed lighting effects (fade, strobe, chase, color_wash)
 
@@ -133,7 +136,8 @@ These commands use QLC+'s high-rate API for real-time control:
 
 These features are implemented client-side by this MCP server:
 
-- **Workspace Generation** - XML generation using fast-xml-parser
+- **Workspace Generation** - XML generation using fast-xml-parser (supports fixtures, scenes, and chasers)
+- **Chaser Creation** - Multi-step chase sequences with configurable timing, run order, and direction
 - **Workspace Reload** - HTTP multipart/form-data upload to `/loadProject`
 - **Effect Sequencing** - Frame-by-frame DMX value calculation and transmission
 
@@ -207,6 +211,14 @@ Once configured in Claude Desktop, you can use natural language to control QLC+:
 **"Generate a workspace with 4 RGB LED fixtures and create red, green, blue scenes"**
 - Claude will call `qlc_generate_workspace` with appropriate fixture and scene definitions
 
+**"Create a chase that alternates between channels 1 and 6 at full, then channels 1 and 5 at full, switching every 1 second"**
+- Claude will:
+  1. Create fixtures for channels 1, 5, and 6
+  2. Create two scenes (State A and State B)
+  3. Create a chaser with 2 steps, each holding for 1000ms
+  4. Generate and reload the workspace
+  5. Start the chase function
+
 ## Technical Details
 
 ### DMX Addressing
@@ -234,10 +246,31 @@ The `createEffectSequence()` method:
 3. Uses precise timing with `setTimeout` for frame pacing
 4. Returns total frames rendered and actual duration
 
+### Chaser Function Generation
+
+The enhanced `generateWorkspace()` method now supports chaser creation:
+
+1. **Function ID Sequencing**: Scenes are assigned IDs 0 to N-1, chasers get IDs starting from N
+2. **Step Configuration**: Each step references a scene index with configurable hold, fadeIn, and fadeOut times
+3. **Run Orders**: Supports Loop (continuous), SingleShot (once), and PingPong (back-and-forth)
+4. **Direction**: Forward or Backward playback
+5. **XML Structure**: Generates proper QLC+ 4 XML format with `<Direction>`, `<RunOrder>`, `<SpeedModes>`, and `<Step>` tags
+
+Example chaser definition:
+```typescript
+{
+  name: 'Alternating Chase',
+  steps: [
+    { sceneIndex: 0, hold: 1000, fadeIn: 0, fadeOut: 0 },
+    { sceneIndex: 1, hold: 1000, fadeIn: 0, fadeOut: 0 }
+  ],
+  runOrder: 'Loop',
+  direction: 'Forward'
+}
+```
+
 ## Limitations
 
-- **No fixture creation** - QLC+ WebSocket API doesn't support programmatic fixture creation
-- **No scene editing** - Scenes must be created in QLC+ UI or via workspace files
 - **No real-time monitoring streams** - Must poll for status updates
 - **No master intensity/blackout** - Not exposed via WebSocket API
 - **Workspace reload stops all functions** - This is a QLC+ limitation

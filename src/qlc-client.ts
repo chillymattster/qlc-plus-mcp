@@ -386,15 +386,69 @@ export class QLCClient{
    * Generate a QLC+ workspace XML file
    */
   generateWorkspace(config: WorkspaceConfig): string {
+    // Build functions array: scenes first, then chasers
+    const functions: any[] = [];
+
+    // Add scene functions (IDs 0 to scenes.length - 1)
+    config.scenes.forEach((s, idx) => {
+      functions.push({
+        '@ID': idx.toString(),
+        '@Type': 'Scene',
+        '@Name': s.name,
+        Speed: {
+          '@FadeIn': (s.fadeIn || 0).toString(),
+          '@FadeOut': (s.fadeOut || 0).toString(),
+          '@Duration': '0'
+        },
+        FixtureVal: Object.entries(s.channels).map(([ch, val]) => ({
+          '@ID': s.fixtureId.toString(),
+          '#text': `${ch},${val}`
+        }))
+      });
+    });
+
+    // Add chaser functions (IDs starting from scenes.length)
+    if (config.chasers && config.chasers.length > 0) {
+      const sceneCount = config.scenes.length;
+
+      config.chasers.forEach((chaser, chaserIdx) => {
+        const chaserId = sceneCount + chaserIdx;
+
+        functions.push({
+          '@ID': chaserId.toString(),
+          '@Type': 'Chaser',
+          '@Name': chaser.name,
+          Speed: {
+            '@FadeIn': '0',
+            '@FadeOut': '0',
+            '@Duration': '0'
+          },
+          Direction: chaser.direction || 'Forward',
+          RunOrder: chaser.runOrder || 'Loop',
+          SpeedModes: {
+            '@FadeIn': 'Common',
+            '@FadeOut': 'Common',
+            '@Duration': 'PerStep'
+          },
+          Step: chaser.steps.map((step, stepIdx) => ({
+            '@Number': stepIdx.toString(),
+            '@FadeIn': (step.fadeIn || 0).toString(),
+            '@Hold': step.hold.toString(),
+            '@FadeOut': (step.fadeOut || 0).toString(),
+            '#text': step.sceneIndex.toString()
+          }))
+        });
+      });
+    }
+
     const workspace = {
       '?xml': {
         '@version': '1.0',
         '@encoding': 'UTF-8'
       },
-      '!DOCTYPE': 'Workspace',
       Workspace: {
-        '@xmlns': 'http://qlcplus.sourceforge.net/Workspace',
-        '@CurrentWindow': 'FunctionManager',
+        '@xmlns': 'http://www.qlcplus.org/Workspace',
+        '@CurrentWindow': 'VirtualConsole',
         Creator: {
           Name: 'Q Light Controller Plus',
           Version: '4.12.0',
@@ -418,37 +472,32 @@ export class QLCClient{
             Address: f.address.toString(),
             Channels: f.channels.toString()
           })),
-          Function: config.scenes.map((s, idx) => ({
-            '@ID': idx.toString(),
-            '@Type': 'Scene',
-            '@Name': s.name,
-            Speed: {
-              '@FadeIn': (s.fadeIn || 0).toString(),
-              '@FadeOut': (s.fadeOut || 0).toString(),
-              '@Duration': '0'
-            },
-            FixtureVal: Object.entries(s.channels).map(([ch, val]) => ({
-              '@ID': s.fixtureId.toString(),
-              '#text': `${ch},${val}`
-            }))
-          }))
+          Function: functions
         },
         VirtualConsole: {
           Frame: {
             '@Caption': ''
           }
-        }
+        },
+        SimpleDesk: {}
       }
     };
 
     const builder = new XMLBuilder({
       ignoreAttributes: false,
+      attributeNamePrefix: '@',
       format: true,
       indentBy: '  ',
       suppressEmptyNode: true
     });
 
-    return builder.build(workspace);
+    let xml = builder.build(workspace);
+
+    // Add DOCTYPE manually since fast-xml-parser doesn't support it properly
+    xml = xml.replace('<?xml version="1.0" encoding="UTF-8"?>',
+                      '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE Workspace>');
+
+    return xml;
   }
 
   /**
@@ -486,9 +535,33 @@ export class QLCClient{
         }
       );
 
+      if (response.status !== 200) {
+        return {
+          success: false,
+          error: `Failed to reload workspace: HTTP ${response.status}`
+        };
+      }
+
+      // Wait briefly for QLC+ to process the workspace
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Verify the workspace actually loaded
+      const functionsResult = await this.getFunctionsNumber();
+      const functionsCount = functionsResult.success ? functionsResult.data : 0;
+
+      if (functionsCount === 0) {
+        return {
+          success: false,
+          error: 'Workspace uploaded but QLC+ loaded 0 functions. The XML may be invalid or QLC+ cannot parse it.'
+        };
+      }
+
       return {
-        success: response.status === 200,
-        data: { message: 'Workspace reloaded successfully' }
+        success: true,
+        data: {
+          message: 'Workspace reloaded successfully',
+          functionsLoaded: functionsCount
+        }
       };
     } catch (e: any) {
       return {

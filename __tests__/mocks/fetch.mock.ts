@@ -82,7 +82,9 @@ export class FetchMock {
 
 export const fetchMock = new FetchMock();
 
-// Replace global fetch with our mock
-(global as any).fetch = jest.fn().mockImplementation((url: string, options?: RequestInit) =>
-  fetchMock.fetch(url, options)
+// Replace global fetch with our mock.
+// `as any` on the impl is a concession to @jest/globals' strict UnknownFunction typing —
+// the implementation is correct at runtime, the types just don't line up with the generic mockFn signature.
+(global as any).fetch = jest.fn().mockImplementation(
+  ((url: string, options?: RequestInit) => fetchMock.fetch(url, options)) as any,
 );

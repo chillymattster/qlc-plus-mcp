@@ -1,13 +1,16 @@
 #!/usr/bin/env node
-import {Server} from '@modelcontextprotocol/sdk/server/index.js';
-import {StdioServerTransport} from '@modelcontextprotocol/sdk/server/stdio.js';
-import {CallToolRequestSchema,ListToolsRequestSchema} from '@modelcontextprotocol/sdk/types.js';
-import {QLCClient} from './qlc-client.js';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { QLCClient } from './qlc-client.js';
+import { AudioAnalyzer } from './audio-analyzer.js';
 
 const client = new QLCClient({
   host: process.env.QLC_HOST || 'localhost',
   port: parseInt(process.env.QLC_PORT || '9999')
 });
+
+const audioAnalyzer = new AudioAnalyzer();
 
 const server = new Server(
   { name: 'qlc-plus-mcp', version: '1.0.0' },
@@ -267,7 +270,7 @@ server.setRequestHandler(ListToolsRequestSchema, async (req: any) => ({
     // ============ Workspace Generation ============
     {
       name: 'qlc_generate_workspace',
-      description: 'Generate a QLC+ workspace (.qxw) file with fixtures and scenes. Creates the XML structure and saves to disk.',
+      description: 'Generate a QLC+ workspace (.qxw) file with fixtures, scenes, and optional chasers. Creates the XML structure and saves to disk.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -304,6 +307,43 @@ server.setRequestHandler(ListToolsRequestSchema, async (req: any) => ({
                 fadeOut: { type: 'number', description: 'Fade out time (ms)', default: 0 }
               },
               required: ['name', 'fixtureId', 'channels']
+            }
+          },
+          chasers: {
+            type: 'array',
+            description: 'Optional array of chaser definitions (multi-step sequences)',
+            items: {
+              type: 'object',
+              properties: {
+                name: { type: 'string', description: 'Chaser name (e.g., "Alternating Chase")' },
+                steps: {
+                  type: 'array',
+                  description: 'Array of chaser steps',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      sceneIndex: { type: 'number', description: 'Scene index (0-based from scenes array)' },
+                      hold: { type: 'number', description: 'Hold time for this step (ms)' },
+                      fadeIn: { type: 'number', description: 'Fade in time (ms)', default: 0 },
+                      fadeOut: { type: 'number', description: 'Fade out time (ms)', default: 0 }
+                    },
+                    required: ['sceneIndex', 'hold']
+                  }
+                },
+                runOrder: {
+                  type: 'string',
+                  enum: ['Loop', 'SingleShot', 'PingPong'],
+                  description: 'Run order mode (default: Loop)',
+                  default: 'Loop'
+                },
+                direction: {
+                  type: 'string',
+                  enum: ['Forward', 'Backward'],
+                  description: 'Playback direction (default: Forward)',
+                  default: 'Forward'
+                }
+              },
+              required: ['name', 'steps']
             }
           },
           outputPath: {
@@ -359,6 +399,40 @@ server.setRequestHandler(ListToolsRequestSchema, async (req: any) => ({
           }
         },
         required: ['effectType', 'universe', 'channels', 'durationMs']
+      }
+    },
+    {
+      name: 'qlc_analyze_music',
+      description: 'Analyze an audio file to extract BPM and beats for light synchronization',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Path or URL to the audio file'
+          }
+        },
+        required: ['path']
+      }
+    },
+    {
+      name: 'qlc_app_control',
+      description: 'Control the QLC+ application (Launch or Quit)',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          command: {
+            type: 'string',
+            enum: ['launch', 'quit'],
+            description: 'Command to execute'
+          },
+          port: {
+            type: 'number',
+            description: 'Web interface port (default 9999)',
+            default: 9999
+          }
+        },
+        required: ['command']
       }
     }
   ]
@@ -674,21 +748,28 @@ server.setRequestHandler(CallToolRequestSchema, async (req: any) => {
       // ============ Workspace Generation ============
 
       case 'qlc_generate_workspace': {
-        const { fixtures, scenes, outputPath } = args as any;
+        const { fixtures, scenes, chasers, outputPath } = args as any;
 
         try {
-          const xml = client.generateWorkspace({ fixtures, scenes });
+          const xml = client.generateWorkspace({ fixtures, scenes, chasers });
           const saveResult = client.saveWorkspace(xml, outputPath);
 
           if (saveResult.success) {
+            let message = `✅ Workspace generated successfully\n` +
+              `📁 Saved to: ${outputPath}\n` +
+              `🎨 Fixtures: ${fixtures.length}\n` +
+              `🎭 Scenes: ${scenes.length}`;
+
+            if (chasers && chasers.length > 0) {
+              message += `\n🔄 Chasers: ${chasers.length}`;
+            }
+
+            message += `\n\nUse qlc_reload_workspace to load it into QLC+`;
+
             return {
               content: [{
                 type: 'text',
-                text: `✅ Workspace generated successfully\n` +
-                      `📁 Saved to: ${outputPath}\n` +
-                      `🎨 Fixtures: ${fixtures.length}\n` +
-                      `🎭 Scenes: ${scenes.length}\n\n` +
-                      `Use qlc_reload_workspace to load it into QLC+`
+                text: message
               }]
             };
           } else {
@@ -714,7 +795,8 @@ server.setRequestHandler(CallToolRequestSchema, async (req: any) => {
             type: 'text',
             text: result.success
               ? `✅ Workspace reloaded from ${workspacePath}\n` +
-                `⚠️  Note: All running functions were stopped during reload`
+              `📊 Functions loaded: ${result.data?.functionsLoaded}\n` +
+              `⚠️  Note: All running functions were stopped during reload`
               : `❌ ${result.error}`
           }],
           isError: !result.success
@@ -737,24 +819,89 @@ server.setRequestHandler(CallToolRequestSchema, async (req: any) => {
             type: 'text',
             text: result.success
               ? `✅ Effect completed\n` +
-                `🎬 Type: ${effectType}\n` +
-                `⏱️  Duration: ${result.data?.durationMs}ms\n` +
-                `🎞️  Frames: ${result.data?.framesRendered}`
+              `🎬 Type: ${effectType}\n` +
+              `⏱️  Duration: ${result.data?.durationMs}ms\n` +
+              `🎞️  Frames: ${result.data?.framesRendered}`
               : `❌ ${result.error}`
           }],
           isError: !result.success
         };
       }
 
-      default:
+      case 'qlc_analyze_music': {
+        const { path } = args as any;
+        const result = await audioAnalyzer.analyze(path);
         return {
-          content: [{ type: 'text', text: `❌ Unknown tool: ${name}` }],
+          content: [{
+            type: 'text',
+            text: JSON.stringify(result, null, 2)
+          }]
+        };
+      }
+
+      case 'qlc_app_control': {
+        const { command, port = 9999 } = args as any;
+        const { spawn, exec } = await import('child_process');
+
+        if (command === 'launch') {
+          try {
+            // Check if already running
+            const isRunning = await new Promise<boolean>((resolve) => {
+              exec('pgrep -x "qlcplus"', (error) => {
+                resolve(!error);
+              });
+            });
+
+            if (isRunning) {
+              return {
+                content: [{ type: 'text', text: '⚠️ QLC+ is already running' }]
+              };
+            }
+
+            const qlcProcess = spawn('/Applications/QLC+_4.app/Contents/MacOS/qlcplus', ['--web', '--operate'], {
+              detached: true,
+              stdio: 'ignore'
+            });
+            qlcProcess.unref();
+
+            return {
+              content: [{ type: 'text', text: `✅ QLC+ launched on port ${port}` }]
+            };
+          } catch (error: any) {
+            return {
+              content: [{ type: 'text', text: `❌ Failed to launch QLC+: ${error.message}` }],
+              isError: true
+            };
+          }
+        } else if (command === 'quit') {
+          return await new Promise((resolve) => {
+            exec('pkill -f "qlcplus"', (error) => {
+              if (error) {
+                resolve({
+                  content: [{ type: 'text', text: '❌ Failed to quit QLC+ (maybe it was not running?)' }],
+                  isError: true
+                });
+              } else {
+                resolve({
+                  content: [{ type: 'text', text: '✅ QLC+ terminated' }]
+                });
+              }
+            });
+          });
+        }
+        return {
+          content: [{ type: 'text', text: '❌ Invalid command' }],
           isError: true
         };
+      }
+
+      default:
+        throw new Error(`Unknown tool: ${name}`);
     }
   } catch (error: any) {
+    console.error('Error handling request:', error);
     return {
-      content: [{ type: 'text', text: `❌ Error: ${error.message}` }],
+      content: [{ type: 'text', text: `Error: ${error.message}` }],
       isError: true
     };
   }

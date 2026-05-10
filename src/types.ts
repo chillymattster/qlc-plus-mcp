@@ -39,7 +39,22 @@ export interface Scene {
   fadeOut?: number;
 }
 
+export interface ChaserStep {
+  sceneIndex: number;
+  hold: number;
+  fadeIn?: number;
+  fadeOut?: number;
+}
+
+export interface Chaser {
+  name: string;
+  steps: ChaserStep[];
+  runOrder?: 'Loop' | 'SingleShot' | 'PingPong';
+  direction?: 'Forward' | 'Backward';
+}
+
 export interface WorkspaceConfig {
   fixtures: Fixture[];
   scenes: Scene[];
+  chasers?: Chaser[];
 }

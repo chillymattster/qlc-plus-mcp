@@ -1,14 +1,17 @@
 import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
+
+// Mock ws BEFORE importing anything that uses it transitively.
+// jest.mock is hoisted, so imported values would be undefined here —
+// require() inside the factory is the standard workaround.
+jest.mock('ws', () => ({
+  __esModule: true,
+  default: require('../mocks/websocket.mock').MockWebSocket,
+}));
+
 import { QLCClient } from '../../src/qlc-client.js';
 import { QLCConfig } from '../../src/types.js';
 import { MockWebSocket } from '../mocks/websocket.mock.js';
 import { fetchMock } from '../mocks/fetch.mock.js';
-
-// Mock ws module
-jest.mock('ws', () => ({
-  __esModule: true,
-  default: MockWebSocket
-}));
 
 describe('QLCClient', () => {
   let client: QLCClient;
@@ -355,6 +358,197 @@ describe('QLCClient', () => {
 
       // Restore original WebSocket
       (global as any).WebSocket = originalWebSocket;
+    });
+  });
+
+  describe('Workspace Generation with Chasers', () => {
+    it('should generate workspace with fixtures, scenes, and chasers', () => {
+      const config = {
+        fixtures: [
+          { name: 'LED 1', manufacturer: 'Generic', model: 'Dimmer', universe: 0, address: 0, channels: 1 },
+          { name: 'LED 2', manufacturer: 'Generic', model: 'Dimmer', universe: 0, address: 1, channels: 1 }
+        ],
+        scenes: [
+          { name: 'Scene A', fixtureId: 0, channels: { 0: 255 } },
+          { name: 'Scene B', fixtureId: 1, channels: { 0: 255 } }
+        ],
+        chasers: [
+          {
+            name: 'Alternating Chase',
+            steps: [
+              { sceneIndex: 0, hold: 1000 },
+              { sceneIndex: 1, hold: 1000 }
+            ],
+            runOrder: 'Loop' as const,
+            direction: 'Forward' as const
+          }
+        ]
+      };
+
+      const xml = client.generateWorkspace(config);
+
+      // Verify XML contains fixtures
+      expect(xml).toContain('<Manufacturer>Generic</Manufacturer>');
+      expect(xml).toContain('<Name>LED 1</Name>');
+      expect(xml).toContain('<Name>LED 2</Name>');
+
+      // Verify XML contains scenes with correct IDs
+      expect(xml).toContain('Type="Scene"');
+      expect(xml).toContain('Name="Scene A"');
+      expect(xml).toContain('Name="Scene B"');
+      expect(xml).toContain('ID="0"');
+      expect(xml).toContain('ID="1"');
+
+      // Verify XML contains chaser with correct structure
+      expect(xml).toContain('Type="Chaser"');
+      expect(xml).toContain('Name="Alternating Chase"');
+      expect(xml).toContain('ID="2"');
+      expect(xml).toContain('<Direction>Forward</Direction>');
+      expect(xml).toContain('<RunOrder>Loop</RunOrder>');
+      expect(xml).toContain('<SpeedModes');
+      expect(xml).toContain('FadeIn="Common"');
+      expect(xml).toContain('Duration="PerStep"');
+
+      // Verify step structure
+      expect(xml).toContain('Number="0"');
+      expect(xml).toContain('Hold="1000"');
+      expect(xml).toContain('Number="1"');
+    });
+
+    it('should handle chasers with fade times', () => {
+      const config = {
+        fixtures: [
+          { name: 'RGB LED', manufacturer: 'Generic', model: 'RGB', universe: 0, address: 0, channels: 3 }
+        ],
+        scenes: [
+          { name: 'Red', fixtureId: 0, channels: { 0: 255, 1: 0, 2: 0 } },
+          { name: 'Green', fixtureId: 0, channels: { 0: 0, 1: 255, 2: 0 } },
+          { name: 'Blue', fixtureId: 0, channels: { 0: 0, 1: 0, 2: 255 } }
+        ],
+        chasers: [
+          {
+            name: 'RGB Fade',
+            steps: [
+              { sceneIndex: 0, hold: 500, fadeIn: 250, fadeOut: 250 },
+              { sceneIndex: 1, hold: 500, fadeIn: 250, fadeOut: 250 },
+              { sceneIndex: 2, hold: 500, fadeIn: 250, fadeOut: 250 }
+            ]
+          }
+        ]
+      };
+
+      const xml = client.generateWorkspace(config);
+
+      expect(xml).toContain('Type="Chaser"');
+      expect(xml).toContain('Name="RGB Fade"');
+      expect(xml).toContain('FadeIn="250"');
+      expect(xml).toContain('FadeOut="250"');
+      expect(xml).toContain('Hold="500"');
+    });
+
+    it('should support PingPong run order', () => {
+      const config = {
+        fixtures: [
+          { name: 'LED', manufacturer: 'Generic', model: 'Dimmer', universe: 0, address: 0, channels: 1 }
+        ],
+        scenes: [
+          { name: 'Low', fixtureId: 0, channels: { 0: 50 } },
+          { name: 'High', fixtureId: 0, channels: { 0: 200 } }
+        ],
+        chasers: [
+          {
+            name: 'PingPong Test',
+            steps: [
+              { sceneIndex: 0, hold: 1000 },
+              { sceneIndex: 1, hold: 1000 }
+            ],
+            runOrder: 'PingPong' as const
+          }
+        ]
+      };
+
+      const xml = client.generateWorkspace(config);
+
+      expect(xml).toContain('<RunOrder>PingPong</RunOrder>');
+    });
+
+    it('should support Backward direction', () => {
+      const config = {
+        fixtures: [
+          { name: 'LED', manufacturer: 'Generic', model: 'Dimmer', universe: 0, address: 0, channels: 1 }
+        ],
+        scenes: [
+          { name: 'S1', fixtureId: 0, channels: { 0: 100 } },
+          { name: 'S2', fixtureId: 0, channels: { 0: 200 } }
+        ],
+        chasers: [
+          {
+            name: 'Backward Chase',
+            steps: [
+              { sceneIndex: 0, hold: 500 },
+              { sceneIndex: 1, hold: 500 }
+            ],
+            direction: 'Backward' as const
+          }
+        ]
+      };
+
+      const xml = client.generateWorkspace(config);
+
+      expect(xml).toContain('<Direction>Backward</Direction>');
+    });
+
+    it('should generate workspace without chasers when none provided', () => {
+      const config = {
+        fixtures: [
+          { name: 'LED', manufacturer: 'Generic', model: 'Dimmer', universe: 0, address: 0, channels: 1 }
+        ],
+        scenes: [
+          { name: 'Scene', fixtureId: 0, channels: { 0: 255 } }
+        ]
+      };
+
+      const xml = client.generateWorkspace(config);
+
+      expect(xml).toContain('Type="Scene"');
+      expect(xml).not.toContain('Type="Chaser"');
+    });
+
+    it('should assign sequential function IDs', () => {
+      const config = {
+        fixtures: [
+          { name: 'LED', manufacturer: 'Generic', model: 'Dimmer', universe: 0, address: 0, channels: 1 }
+        ],
+        scenes: [
+          { name: 'S1', fixtureId: 0, channels: { 0: 50 } },
+          { name: 'S2', fixtureId: 0, channels: { 0: 100 } },
+          { name: 'S3', fixtureId: 0, channels: { 0: 150 } }
+        ],
+        chasers: [
+          {
+            name: 'Chase 1',
+            steps: [{ sceneIndex: 0, hold: 500 }, { sceneIndex: 1, hold: 500 }]
+          },
+          {
+            name: 'Chase 2',
+            steps: [{ sceneIndex: 1, hold: 500 }, { sceneIndex: 2, hold: 500 }]
+          }
+        ]
+      };
+
+      const xml = client.generateWorkspace(config);
+
+      // Scenes should have IDs 0, 1, 2
+      const sceneIdMatch = xml.match(/Type="Scene"[^>]*ID="(\d+)"/g);
+      expect(sceneIdMatch).toBeTruthy();
+      expect(sceneIdMatch!.length).toBe(3);
+
+      // Chasers should have IDs 3, 4
+      const chaserIdMatch = xml.match(/Type="Chaser"[^>]*ID="(\d+)"/g);
+      expect(chaserIdMatch).toBeTruthy();
+      expect(chaserIdMatch!.length).toBe(2);
+      expect(xml).toContain('Type="Chaser" Name="Chase 1" ID="3"');
+      expect(xml).toContain('Type="Chaser" Name="Chase 2" ID="4"');
     });
   });
 });
