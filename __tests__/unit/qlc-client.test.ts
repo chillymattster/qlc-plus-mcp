@@ -319,6 +319,38 @@ describe('QLCClient', () => {
       expect(xml).toContain('LED 1');
     });
 
+    it('should store 1-based universe, address and scene channels 0-based in the file', () => {
+      const xml = client.generateWorkspace({
+        fixtures: [
+          { name: 'Par', manufacturer: 'Generic', model: 'RGB', universe: 2, address: 5, channels: 3 }
+        ],
+        scenes: [
+          { name: 'Red', fixtureId: 0, channels: { 1: 255, 3: 10 } }
+        ]
+      });
+
+      const parsed = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' }).parse(xml);
+      const fixture = parsed.Workspace.Engine.Fixture;
+      expect(String(fixture.Universe)).toBe('1');
+      expect(String(fixture.Address)).toBe('4');
+      const values = parsed.Workspace.Engine.Function.FixtureVal.map((v: any) => v['#text']);
+      expect(values).toEqual(['0,255', '2,10']);
+    });
+
+    it.each([
+      [{ universe: 0, address: 1 }, {}, 'numbered from 1'],
+      [{ universe: 1, address: 0 }, {}, 'addresses are 1-512'],
+      [{ universe: 1, address: 511 }, {}, 'addresses are 1-512'],
+      [{ universe: 1, address: 1 }, { 0: 255 }, 'fixture channels are numbered from 1'],
+      [{ universe: 1, address: 1 }, { 4: 255 }, 'fixture channels are numbered from 1'],
+    ])('should reject out-of-range input %#', (fixtureInput, sceneChannels, message) => {
+      const config = {
+        fixtures: [{ name: 'Par', manufacturer: 'Generic', model: 'RGB', channels: 3, ...fixtureInput }],
+        scenes: [{ name: 'S', fixtureId: 0, channels: { 1: 255, ...sceneChannels } }]
+      };
+      expect(() => client.generateWorkspace(config)).toThrow(message);
+    });
+
     it('should save workspace to file', () => {
       const xml = '<?xml version="1.0"?><Workspace></Workspace>';
       const result = client.saveWorkspace(xml, '/tmp/test.qxw');
@@ -423,12 +455,12 @@ describe('QLCClient', () => {
     it('should generate workspace with fixtures, scenes, and chasers', () => {
       const config = {
         fixtures: [
-          { name: 'LED 1', manufacturer: 'Generic', model: 'Dimmer', universe: 1, address: 0, channels: 1 },
-          { name: 'LED 2', manufacturer: 'Generic', model: 'Dimmer', universe: 1, address: 1, channels: 1 }
+          { name: 'LED 1', manufacturer: 'Generic', model: 'Dimmer', universe: 1, address: 1, channels: 1 },
+          { name: 'LED 2', manufacturer: 'Generic', model: 'Dimmer', universe: 1, address: 2, channels: 1 }
         ],
         scenes: [
-          { name: 'Scene A', fixtureId: 0, channels: { 0: 255 } },
-          { name: 'Scene B', fixtureId: 1, channels: { 0: 255 } }
+          { name: 'Scene A', fixtureId: 0, channels: { 1: 255 } },
+          { name: 'Scene B', fixtureId: 1, channels: { 1: 255 } }
         ],
         chasers: [
           {
@@ -476,12 +508,12 @@ describe('QLCClient', () => {
     it('should handle chasers with fade times', () => {
       const config = {
         fixtures: [
-          { name: 'RGB LED', manufacturer: 'Generic', model: 'RGB', universe: 1, address: 0, channels: 3 }
+          { name: 'RGB LED', manufacturer: 'Generic', model: 'RGB', universe: 1, address: 1, channels: 3 }
         ],
         scenes: [
-          { name: 'Red', fixtureId: 0, channels: { 0: 255, 1: 0, 2: 0 } },
-          { name: 'Green', fixtureId: 0, channels: { 0: 0, 1: 255, 2: 0 } },
-          { name: 'Blue', fixtureId: 0, channels: { 0: 0, 1: 0, 2: 255 } }
+          { name: 'Red', fixtureId: 0, channels: { 1: 255, 2: 0, 3: 0 } },
+          { name: 'Green', fixtureId: 0, channels: { 1: 0, 2: 255, 3: 0 } },
+          { name: 'Blue', fixtureId: 0, channels: { 1: 0, 2: 0, 3: 255 } }
         ],
         chasers: [
           {
@@ -507,11 +539,11 @@ describe('QLCClient', () => {
     it('should support PingPong run order', () => {
       const config = {
         fixtures: [
-          { name: 'LED', manufacturer: 'Generic', model: 'Dimmer', universe: 1, address: 0, channels: 1 }
+          { name: 'LED', manufacturer: 'Generic', model: 'Dimmer', universe: 1, address: 1, channels: 1 }
         ],
         scenes: [
-          { name: 'Low', fixtureId: 0, channels: { 0: 50 } },
-          { name: 'High', fixtureId: 0, channels: { 0: 200 } }
+          { name: 'Low', fixtureId: 0, channels: { 1: 50 } },
+          { name: 'High', fixtureId: 0, channels: { 1: 200 } }
         ],
         chasers: [
           {
@@ -533,11 +565,11 @@ describe('QLCClient', () => {
     it('should support Backward direction', () => {
       const config = {
         fixtures: [
-          { name: 'LED', manufacturer: 'Generic', model: 'Dimmer', universe: 1, address: 0, channels: 1 }
+          { name: 'LED', manufacturer: 'Generic', model: 'Dimmer', universe: 1, address: 1, channels: 1 }
         ],
         scenes: [
-          { name: 'S1', fixtureId: 0, channels: { 0: 100 } },
-          { name: 'S2', fixtureId: 0, channels: { 0: 200 } }
+          { name: 'S1', fixtureId: 0, channels: { 1: 100 } },
+          { name: 'S2', fixtureId: 0, channels: { 1: 200 } }
         ],
         chasers: [
           {
@@ -559,10 +591,10 @@ describe('QLCClient', () => {
     it('should generate workspace without chasers when none provided', () => {
       const config = {
         fixtures: [
-          { name: 'LED', manufacturer: 'Generic', model: 'Dimmer', universe: 1, address: 0, channels: 1 }
+          { name: 'LED', manufacturer: 'Generic', model: 'Dimmer', universe: 1, address: 1, channels: 1 }
         ],
         scenes: [
-          { name: 'Scene', fixtureId: 0, channels: { 0: 255 } }
+          { name: 'Scene', fixtureId: 0, channels: { 1: 255 } }
         ]
       };
 
@@ -575,12 +607,12 @@ describe('QLCClient', () => {
     it('should assign sequential function IDs', () => {
       const config = {
         fixtures: [
-          { name: 'LED', manufacturer: 'Generic', model: 'Dimmer', universe: 1, address: 0, channels: 1 }
+          { name: 'LED', manufacturer: 'Generic', model: 'Dimmer', universe: 1, address: 1, channels: 1 }
         ],
         scenes: [
-          { name: 'S1', fixtureId: 0, channels: { 0: 50 } },
-          { name: 'S2', fixtureId: 0, channels: { 0: 100 } },
-          { name: 'S3', fixtureId: 0, channels: { 0: 150 } }
+          { name: 'S1', fixtureId: 0, channels: { 1: 50 } },
+          { name: 'S2', fixtureId: 0, channels: { 1: 100 } },
+          { name: 'S3', fixtureId: 0, channels: { 1: 150 } }
         ],
         chasers: [
           {

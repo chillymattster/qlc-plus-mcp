@@ -415,6 +415,27 @@ export class QLCClient{
    * Generate a QLC+ workspace XML file
    */
   generateWorkspace(config: WorkspaceConfig): string {
+    // Tool input is 1-based like the QLC+ UI (universe 1, address 1-512,
+    // fixture channel 1..n); the .qxw file stores all of them 0-based
+    config.fixtures.forEach((f) => {
+      const universeError = this.universeError(f.universe);
+      if (universeError) {
+        throw new Error(`Fixture "${f.name}": ${universeError}`);
+      }
+      if (!Number.isInteger(f.address) || f.address < 1 || f.address + f.channels - 1 > 512) {
+        throw new Error(`Fixture "${f.name}": address ${f.address} invalid (addresses are 1-512)`);
+      }
+    });
+    config.scenes.forEach((s) => {
+      const fixture = config.fixtures[s.fixtureId];
+      Object.keys(s.channels).forEach((ch) => {
+        const channel = parseInt(ch);
+        if (!(channel >= 1 && (!fixture || channel <= fixture.channels))) {
+          throw new Error(`Scene "${s.name}": channel ${ch} invalid (fixture channels are numbered from 1)`);
+        }
+      });
+    });
+
     // Build functions array: scenes first, then chasers
     const functions: any[] = [];
 
@@ -431,7 +452,7 @@ export class QLCClient{
         },
         FixtureVal: Object.entries(s.channels).map(([ch, val]) => ({
           '@ID': s.fixtureId.toString(),
-          '#text': `${ch},${val}`
+          '#text': `${parseInt(ch) - 1},${val}`
         }))
       });
     });
@@ -497,9 +518,8 @@ export class QLCClient{
             Mode: `${f.channels} Channel`,
             ID: idx.toString(),
             Name: f.name,
-            // .qxw files store universes 0-based
             Universe: (f.universe - 1).toString(),
-            Address: f.address.toString(),
+            Address: (f.address - 1).toString(),
             Channels: f.channels.toString()
           })),
           Function: functions

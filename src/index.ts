@@ -286,7 +286,7 @@ server.setRequestHandler(ListToolsRequestSchema, async (req: any) => ({
                 manufacturer: { type: 'string', description: 'Manufacturer (e.g., "Generic")' },
                 model: { type: 'string', description: 'Model name (e.g., "RGB LED")' },
                 universe: { type: 'number', description: 'Universe number, starting at 1 (as shown in QLC+)' },
-                address: { type: 'number', description: 'DMX address (0-511)' },
+                address: { type: 'number', description: 'DMX start address, 1-512 (as shown in QLC+)' },
                 channels: { type: 'number', description: 'Number of channels fixture uses' }
               },
               required: ['name', 'manufacturer', 'model', 'universe', 'address', 'channels']
@@ -302,7 +302,7 @@ server.setRequestHandler(ListToolsRequestSchema, async (req: any) => ({
                 fixtureId: { type: 'number', description: 'Fixture ID (0-based index from fixtures array)' },
                 channels: {
                   type: 'object',
-                  description: 'Channel values as {channel: value} pairs',
+                  description: 'Channel values as {channel: value} pairs; channel 1 is the fixture\'s first channel',
                   additionalProperties: { type: 'number', minimum: 0, maximum: 255 }
                 },
                 fadeIn: { type: 'number', description: 'Fade in time (ms)', default: 0 },

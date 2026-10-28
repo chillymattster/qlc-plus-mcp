@@ -231,6 +231,8 @@ QLC+ uses absolute DMX addressing for the `CH|` command:
 
 Universes are numbered from 1 in every tool, as in the QLC+ UI and its web API; `0` is rejected. The `setChannelValue()` method handles the conversion to absolute addresses automatically.
 
+`qlc_generate_workspace` uses the same numbering: fixture `universe` from 1, `address` 1-512, and scene channels from 1 (channel 1 is the fixture's first channel). The generator converts them to the 0-based values that `.qxw` files store and rejects values outside these ranges. `fixtureId` and `sceneIndex` stay 0-based, because they are positions in the `fixtures` and `scenes` arrays.
+
 ### WebSocket Connection
 
 The client maintains a persistent WebSocket connection to `ws://{host}:{port}/qlcplusWS` with:
