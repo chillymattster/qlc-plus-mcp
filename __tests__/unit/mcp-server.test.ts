@@ -188,7 +188,7 @@ describe('MCP Server', () => {
           params: {
             name: 'qlc_set_channel',
             arguments: {
-              universe: 0,
+              universe: 1,
               channel: 1,
               value: 255,
             },
@@ -270,7 +270,7 @@ describe('MCP Server', () => {
             name: 'qlc_generate_workspace',
             arguments: {
               fixtures: [
-                { name: 'LED 1', manufacturer: 'Generic', model: 'RGB', universe: 0, address: 1, channels: 3 },
+                { name: 'LED 1', manufacturer: 'Generic', model: 'RGB', universe: 1, address: 1, channels: 3 },
               ],
               scenes: [
                 { name: 'Red', fixtureId: 0, channels: { 1: 255, 2: 0, 3: 0 } },
@@ -291,7 +291,7 @@ describe('MCP Server', () => {
             name: 'qlc_create_effect_sequence',
             arguments: {
               effectType: 'fade',
-              universe: 0,
+              universe: 1,
               channels: [1, 2, 3],
               durationMs: 50,
               fps: 40,

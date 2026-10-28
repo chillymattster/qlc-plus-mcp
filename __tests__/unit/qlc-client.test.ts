@@ -168,8 +168,24 @@ describe('QLCClient', () => {
       expect(Array.isArray(result.data)).toBe(true);
     });
 
+    it.each(['v4', 'v5'] as const)('should parse %s channel records', async (format) => {
+      MockWebSocket.channelValuesFormat = format;
+      try {
+        const result = await client.getChannelsValues(1, 5, 4);
+        expect(result.success).toBe(true);
+        expect(result.data).toEqual([
+          { index: 5, value: 0, type: '0.#FF0000' },
+          { index: 6, value: 10, type: '0.#FF0000' },
+          { index: 7, value: 20, type: '0.#FF0000' },
+          { index: 8, value: 30, type: '0.#FF0000' },
+        ]);
+      } finally {
+        MockWebSocket.channelValuesFormat = 'v4';
+      }
+    });
+
     it('should get universe snapshot', async () => {
-      const result = await client.getUniverseSnapshot(0);
+      const result = await client.getUniverseSnapshot(1);
       expect(result.success).toBe(true);
       expect(Array.isArray(result.data)).toBe(true);
     });
@@ -177,30 +193,55 @@ describe('QLCClient', () => {
 
   describe('High-Rate APIs (No QLC+API prefix)', () => {
     it('should set channel value with valid parameters', async () => {
-      const result = await client.setChannelValue(0, 1, 255);
+      const result = await client.setChannelValue(1, 1, 255);
       expect(result.success).toBe(true);
     });
 
     it('should reject invalid channel values', async () => {
-      const result1 = await client.setChannelValue(0, 1, -1);
+      const result1 = await client.setChannelValue(1, 1, -1);
       expect(result1.success).toBe(false);
       expect(result1.error).toContain('0-255');
 
-      const result2 = await client.setChannelValue(0, 1, 256);
+      const result2 = await client.setChannelValue(1, 1, 256);
       expect(result2.success).toBe(false);
       expect(result2.error).toContain('0-255');
     });
 
+    it('should map 1-based universes to absolute DMX addresses', async () => {
+      MockWebSocket.sentCommands = [];
+      await client.setChannelValue(1, 2, 243);
+      await client.setChannelValue(2, 2, 243);
+      await client.setMultipleChannels(3, { 1: 10 });
+      expect(MockWebSocket.sentCommands).toEqual(
+        expect.arrayContaining(['CH|2|243', 'CH|514|243', 'CH|1025|10'])
+      );
+    });
+
+    it('should reject universe 0', async () => {
+      MockWebSocket.sentCommands = [];
+      const results = [
+        await client.setChannelValue(0, 1, 255),
+        await client.setMultipleChannels(0, { 1: 255 }),
+        await client.getChannelsValues(0, 1, 3),
+        await client.createEffectSequence('strobe', 0, [1], 50, 40),
+      ];
+      for (const result of results) {
+        expect(result.success).toBe(false);
+        expect(result.error).toContain('numbered from 1');
+      }
+      expect(MockWebSocket.sentCommands).toEqual([]);
+    });
+
     it('should set multiple channels', async () => {
       const channels = { 1: 255, 2: 128, 3: 64 };
-      const result = await client.setMultipleChannels(0, channels);
+      const result = await client.setMultipleChannels(1, channels);
       expect(result.success).toBe(true);
       expect(result.data?.channelsSet).toBe(3);
     });
 
     it('should reject invalid values in multiple channels', async () => {
       const channels = { 1: 255, 2: -1, 3: 64 };
-      const result = await client.setMultipleChannels(0, channels);
+      const result = await client.setMultipleChannels(1, channels);
       expect(result.success).toBe(false);
       expect(result.error).toContain('Invalid value');
     });
@@ -264,7 +305,7 @@ describe('QLCClient', () => {
     it('should generate workspace XML', () => {
       const config = {
         fixtures: [
-          { name: 'LED 1', manufacturer: 'Generic', model: 'RGB', universe: 0, address: 1, channels: 3 }
+          { name: 'LED 1', manufacturer: 'Generic', model: 'RGB', universe: 1, address: 1, channels: 3 }
         ],
         scenes: [
           { name: 'Red', fixtureId: 0, channels: { 1: 255, 2: 0, 3: 0 } }
@@ -287,26 +328,26 @@ describe('QLCClient', () => {
 
   describe('Effect Sequencing', () => {
     it('should create fade effect', async () => {
-      const result = await client.createEffectSequence('fade', 0, [1, 2, 3], 1000, 40);
+      const result = await client.createEffectSequence('fade', 1, [1, 2, 3], 1000, 40);
       expect(result.success).toBe(true);
       expect(result.data).toHaveProperty('framesRendered');
       expect(result.data).toHaveProperty('effectType', 'fade');
     });
 
     it('should create strobe effect', async () => {
-      const result = await client.createEffectSequence('strobe', 0, [1], 500, 40);
+      const result = await client.createEffectSequence('strobe', 1, [1], 500, 40);
       expect(result.success).toBe(true);
       expect(result.data?.effectType).toBe('strobe');
     });
 
     it('should create chase effect', async () => {
-      const result = await client.createEffectSequence('chase', 0, [1, 2, 3, 4], 2000, 40);
+      const result = await client.createEffectSequence('chase', 1, [1, 2, 3, 4], 2000, 40);
       expect(result.success).toBe(true);
       expect(result.data?.effectType).toBe('chase');
     });
 
     it('should create color wash effect', async () => {
-      const result = await client.createEffectSequence('color_wash', 0, [1, 2, 3], 3000, 40);
+      const result = await client.createEffectSequence('color_wash', 1, [1, 2, 3], 3000, 40);
       expect(result.success).toBe(true);
       expect(result.data?.effectType).toBe('color_wash');
     });
@@ -382,8 +423,8 @@ describe('QLCClient', () => {
     it('should generate workspace with fixtures, scenes, and chasers', () => {
       const config = {
         fixtures: [
-          { name: 'LED 1', manufacturer: 'Generic', model: 'Dimmer', universe: 0, address: 0, channels: 1 },
-          { name: 'LED 2', manufacturer: 'Generic', model: 'Dimmer', universe: 0, address: 1, channels: 1 }
+          { name: 'LED 1', manufacturer: 'Generic', model: 'Dimmer', universe: 1, address: 0, channels: 1 },
+          { name: 'LED 2', manufacturer: 'Generic', model: 'Dimmer', universe: 1, address: 1, channels: 1 }
         ],
         scenes: [
           { name: 'Scene A', fixtureId: 0, channels: { 0: 255 } },
@@ -435,7 +476,7 @@ describe('QLCClient', () => {
     it('should handle chasers with fade times', () => {
       const config = {
         fixtures: [
-          { name: 'RGB LED', manufacturer: 'Generic', model: 'RGB', universe: 0, address: 0, channels: 3 }
+          { name: 'RGB LED', manufacturer: 'Generic', model: 'RGB', universe: 1, address: 0, channels: 3 }
         ],
         scenes: [
           { name: 'Red', fixtureId: 0, channels: { 0: 255, 1: 0, 2: 0 } },
@@ -466,7 +507,7 @@ describe('QLCClient', () => {
     it('should support PingPong run order', () => {
       const config = {
         fixtures: [
-          { name: 'LED', manufacturer: 'Generic', model: 'Dimmer', universe: 0, address: 0, channels: 1 }
+          { name: 'LED', manufacturer: 'Generic', model: 'Dimmer', universe: 1, address: 0, channels: 1 }
         ],
         scenes: [
           { name: 'Low', fixtureId: 0, channels: { 0: 50 } },
@@ -492,7 +533,7 @@ describe('QLCClient', () => {
     it('should support Backward direction', () => {
       const config = {
         fixtures: [
-          { name: 'LED', manufacturer: 'Generic', model: 'Dimmer', universe: 0, address: 0, channels: 1 }
+          { name: 'LED', manufacturer: 'Generic', model: 'Dimmer', universe: 1, address: 0, channels: 1 }
         ],
         scenes: [
           { name: 'S1', fixtureId: 0, channels: { 0: 100 } },
@@ -518,7 +559,7 @@ describe('QLCClient', () => {
     it('should generate workspace without chasers when none provided', () => {
       const config = {
         fixtures: [
-          { name: 'LED', manufacturer: 'Generic', model: 'Dimmer', universe: 0, address: 0, channels: 1 }
+          { name: 'LED', manufacturer: 'Generic', model: 'Dimmer', universe: 1, address: 0, channels: 1 }
         ],
         scenes: [
           { name: 'Scene', fixtureId: 0, channels: { 0: 255 } }
@@ -534,7 +575,7 @@ describe('QLCClient', () => {
     it('should assign sequential function IDs', () => {
       const config = {
         fixtures: [
-          { name: 'LED', manufacturer: 'Generic', model: 'Dimmer', universe: 0, address: 0, channels: 1 }
+          { name: 'LED', manufacturer: 'Generic', model: 'Dimmer', universe: 1, address: 0, channels: 1 }
         ],
         scenes: [
           { name: 'S1', fixtureId: 0, channels: { 0: 50 } },
@@ -580,6 +621,11 @@ describe('QLCClient', () => {
         { name: 'Chase 1', id: '3' },
         { name: 'Chase 2', id: '4' },
       ]);
+
+      // Universe 1 in the tool input is stored 0-based in the .qxw file
+      const fixturesRaw = parsed?.Workspace?.Engine?.Fixture;
+      const fixtures: any[] = Array.isArray(fixturesRaw) ? fixturesRaw : [fixturesRaw];
+      expect(fixtures.map((f) => String(f.Universe))).toEqual(fixtures.map(() => '0'));
     });
   });
 });

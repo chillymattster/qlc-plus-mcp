@@ -68,7 +68,7 @@ describe('Error Handling and Edge Cases', () => {
         this.readyState = MockWebSocket.CLOSED;
       };
       try {
-        const result = await client.setChannelValue(0, 1, 255);
+        const result = await client.setChannelValue(1, 1, 255);
         expect(result.success).toBe(true);
       } finally {
         MockWebSocket.prototype.send = original;
@@ -140,9 +140,9 @@ describe('Error Handling and Edge Cases', () => {
   describe('Input Validation Errors', () => {
     it('should reject invalid channel values', async () => {
       const tests = [
-        { universe: 0, channel: 1, value: -1 },
-        { universe: 0, channel: 1, value: 256 },
-        { universe: 0, channel: 1, value: 999 }
+        { universe: 1, channel: 1, value: -1 },
+        { universe: 1, channel: 1, value: 256 },
+        { universe: 1, channel: 1, value: 999 }
       ];
 
       for (const test of tests) {
@@ -168,7 +168,7 @@ describe('Error Handling and Edge Cases', () => {
 
     it('should reject invalid values in multiple channels', async () => {
       const channels = { 1: 255, 2: -1, 3: 64 };
-      const result = await client.setMultipleChannels(0, channels);
+      const result = await client.setMultipleChannels(1, channels);
       expect(result.success).toBe(false);
       expect(result.error).toContain('Invalid value');
     });

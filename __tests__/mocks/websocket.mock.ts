@@ -26,6 +26,10 @@ export class MockWebSocket {
    * subclass-and-replace-the-mock-module-for-one-test.
    */
   static suppressOpen = false;
+  /** Wire format for getChannelsValues: QLC+ 4 (3 fields) or QLC+ 5 (4 fields per channel). */
+  static channelValuesFormat: 'v4' | 'v5' = 'v4';
+  /** Every command passed to send(), across all instances. Clear it in the test. */
+  static sentCommands: string[] = [];
 
   readyState = MockWebSocket.OPEN;
   url: string;
@@ -133,15 +137,17 @@ export class MockWebSocket {
         return `QLC+API|getWidgetSubIdList|10|Button|11|Slider`;
 
       case 'getChannelsValues': {
-        // Parser iterates triples: index|value|type|index|value|type|...
+        // QLC+ 4: index|value|type|...  QLC+ 5: index|value|type|0|...
+        // Values are (i * 10) % 256 so tests can check record alignment.
         // args = [universe, startAddress, count]
         const start = parseInt(args[1] ?? '1', 10);
         const count = parseInt(args[2] ?? '1', 10);
-        const triples: string[] = ['QLC+API', 'getChannelsValues'];
+        const fields: string[] = ['QLC+API', 'getChannelsValues'];
         for (let i = 0; i < count; i++) {
-          triples.push(String(start + i), '0', 'DMX');
+          fields.push(String(start + i), String((i * 10) % 256), '0.#FF0000');
+          if (MockWebSocket.channelValuesFormat === 'v5') fields.push('0');
         }
-        return triples.join('|');
+        return fields.join('|');
       }
 
       default:
@@ -152,6 +158,7 @@ export class MockWebSocket {
 
   send(data: string | ArrayBuffer): void {
     const command = data.toString();
+    MockWebSocket.sentCommands.push(command);
 
     // High-rate APIs (CH|..., widgetId|value, cueListId|OP, frameId|OP,
     // animationId|MATRIX_PUSHBUTTON|...) are fire-and-forget in the real

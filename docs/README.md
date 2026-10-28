@@ -202,10 +202,10 @@ Once configured in Claude Desktop, you can use natural language to control QLC+:
 **"Start the 'Main Scene' function"**
 - Claude will call `qlc_start_function` with name="Main Scene"
 
-**"Set DMX channel 1 in universe 0 to full brightness"**
-- Claude will call `qlc_set_channel` with universe=0, channel=1, value=255
+**"Set DMX channel 1 in universe 1 to full brightness"**
+- Claude will call `qlc_set_channel` with universe=1, channel=1, value=255
 
-**"Create a strobe effect on channels 1-10 in universe 0 for 5 seconds"**
+**"Create a strobe effect on channels 1-10 in universe 1 for 5 seconds"**
 - Claude will call `qlc_create_effect_sequence` with effectType="strobe", channels=[1-10], durationMs=5000
 
 **"Generate a workspace with 4 RGB LED fixtures and create red, green, blue scenes"**
@@ -224,12 +224,12 @@ Once configured in Claude Desktop, you can use natural language to control QLC+:
 ### DMX Addressing
 
 QLC+ uses absolute DMX addressing for the `CH|` command:
-- Universe 0: addresses 1-512
-- Universe 1: addresses 513-1024
-- Universe 2: addresses 1025-1536
+- Universe 1: addresses 1-512
+- Universe 2: addresses 513-1024
+- Universe 3: addresses 1025-1536
 - etc.
 
-The `setChannelValue()` method handles this conversion automatically.
+Universes are numbered from 1 in every tool, as in the QLC+ UI and its web API; `0` is rejected. The `setChannelValue()` method handles the conversion to absolute addresses automatically.
 
 ### WebSocket Connection
 

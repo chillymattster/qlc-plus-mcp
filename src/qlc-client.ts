@@ -210,12 +210,35 @@ export class QLCClient{
 
   // ------------- Channels API (Standard) -------------
 
+  // Universes are 1-based everywhere, matching the QLC+ UI and its web API
+  private universeError(universe: number): string | null {
+    return Number.isInteger(universe) && universe >= 1
+      ? null
+      : `Invalid universe ${universe} (universes are numbered from 1)`;
+  }
+
+  // Convert universe + channel to absolute DMX address for the CH| API
+  // Universe 1: addresses 1-512
+  // Universe 2: addresses 513-1024
+  // etc.
+  private toAbsoluteAddress(universe: number, channel: number): number {
+    return ((universe - 1) * 512) + channel;
+  }
+
   async getChannelsValues(universe: number, startAddress: number, count: number): Promise<QLCResponse<Array<{index: number, value: number, type: string}>>> {
+    const universeError = this.universeError(universe);
+    if (universeError) {
+      return { success: false, error: universeError };
+    }
+
     const result = await this.send<string[]>(`QLC+API|getChannelsValues|${universe}|${startAddress}|${count}`);
     if (result.success && result.data) {
-      // Response format: Index|Value|Type|Index|Value|Type|...
+      // Response format: QLC+ 4 sends Index|Value|Type per channel,
+      // QLC+ 5 appends a fourth field (Index|Value|Type|X). Detect the record
+      // width from where the second channel index sits.
+      const stride = parseInt(result.data[3]) === parseInt(result.data[0]) + 1 ? 3 : 4;
       const channels: Array<{index: number, value: number, type: string}> = [];
-      for (let i = 0; i < result.data.length; i += 3) {
+      for (let i = 0; i < result.data.length; i += stride) {
         if (i + 2 < result.data.length) {
           channels.push({
             index: parseInt(result.data[i]),
@@ -240,11 +263,12 @@ export class QLCClient{
       return { success: false, error: 'Value must be 0-255' };
     }
 
-    // Convert universe + channel to absolute DMX address
-    // Universe 0: addresses 1-512
-    // Universe 1: addresses 513-1024
-    // etc.
-    const absoluteAddress = (universe * 512) + channel;
+    const universeError = this.universeError(universe);
+    if (universeError) {
+      return { success: false, error: universeError };
+    }
+
+    const absoluteAddress = this.toAbsoluteAddress(universe, channel);
 
     try {
       const ws = await this.connect();
@@ -357,6 +381,11 @@ export class QLCClient{
   }
 
   async setMultipleChannels(universe: number, channels: Record<number, number>): Promise<QLCResponse> {
+    const universeError = this.universeError(universe);
+    if (universeError) {
+      return { success: false, error: universeError };
+    }
+
     try {
       const ws = await this.connect();
 
@@ -368,7 +397,7 @@ export class QLCClient{
           return { success: false, error: `Invalid value ${val} for channel ${ch}` };
         }
 
-        const absoluteAddress = (universe * 512) + ch;
+        const absoluteAddress = this.toAbsoluteAddress(universe, ch);
         ws.send(`CH|${absoluteAddress}|${val}`);
       }
 
@@ -468,7 +497,8 @@ export class QLCClient{
             Mode: `${f.channels} Channel`,
             ID: idx.toString(),
             Name: f.name,
-            Universe: f.universe.toString(),
+            // .qxw files store universes 0-based
+            Universe: (f.universe - 1).toString(),
             Address: f.address.toString(),
             Channels: f.channels.toString()
           })),
@@ -581,6 +611,11 @@ export class QLCClient{
     durationMs: number,
     fps: number = 40
   ): Promise<QLCResponse> {
+    const universeError = this.universeError(universe);
+    if (universeError) {
+      return { success: false, error: universeError };
+    }
+
     try {
       const ws = await this.connect();
       const frameTime = 1000 / fps;
@@ -593,7 +628,7 @@ export class QLCClient{
         const channelValues = frames[frame];
 
         for (const [ch, val] of Object.entries(channelValues)) {
-          const absoluteAddr = (universe * 512) + parseInt(ch);
+          const absoluteAddr = this.toAbsoluteAddress(universe, parseInt(ch));
           ws.send(`CH|${absoluteAddr}|${val}`);
         }
 

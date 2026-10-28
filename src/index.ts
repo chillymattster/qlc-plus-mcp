@@ -159,7 +159,7 @@ server.setRequestHandler(ListToolsRequestSchema, async (req: any) => ({
       inputSchema: {
         type: 'object',
         properties: {
-          universe: { type: 'number', description: 'Universe index (1-based)' },
+          universe: { type: 'number', description: 'Universe number, starting at 1 (as shown in QLC+)' },
           startAddress: { type: 'number', description: 'DMX start address (1-512)' },
           count: { type: 'number', description: 'Number of channels to retrieve' }
         },
@@ -172,7 +172,7 @@ server.setRequestHandler(ListToolsRequestSchema, async (req: any) => ({
       inputSchema: {
         type: 'object',
         properties: {
-          universe: { type: 'number', description: 'Universe index (1-based)' }
+          universe: { type: 'number', description: 'Universe number, starting at 1 (as shown in QLC+)' }
         },
         required: ['universe']
       }
@@ -183,7 +183,7 @@ server.setRequestHandler(ListToolsRequestSchema, async (req: any) => ({
       inputSchema: {
         type: 'object',
         properties: {
-          universe: { type: 'number', description: 'Universe (0-based for calculation)' },
+          universe: { type: 'number', description: 'Universe number, starting at 1 (as shown in QLC+)' },
           channel: { type: 'number', description: 'Channel within universe (1-512)' },
           value: { type: 'number', minimum: 0, maximum: 255, description: 'DMX value 0-255' }
         },
@@ -196,7 +196,7 @@ server.setRequestHandler(ListToolsRequestSchema, async (req: any) => ({
       inputSchema: {
         type: 'object',
         properties: {
-          universe: { type: 'number', description: 'Universe (0-based)' },
+          universe: { type: 'number', description: 'Universe number, starting at 1 (as shown in QLC+)' },
           channels: {
             type: 'object',
             description: 'Channel:value pairs (e.g., {"1": 255, "2": 128})',
@@ -285,7 +285,7 @@ server.setRequestHandler(ListToolsRequestSchema, async (req: any) => ({
                 name: { type: 'string', description: 'Fixture name (e.g., "LED 1")' },
                 manufacturer: { type: 'string', description: 'Manufacturer (e.g., "Generic")' },
                 model: { type: 'string', description: 'Model name (e.g., "RGB LED")' },
-                universe: { type: 'number', description: 'Universe (0-based)' },
+                universe: { type: 'number', description: 'Universe number, starting at 1 (as shown in QLC+)' },
                 address: { type: 'number', description: 'DMX address (0-511)' },
                 channels: { type: 'number', description: 'Number of channels fixture uses' }
               },
@@ -383,7 +383,7 @@ server.setRequestHandler(ListToolsRequestSchema, async (req: any) => ({
           },
           universe: {
             type: 'number',
-            description: 'Universe (0-based)'
+            description: 'Universe number, starting at 1 (as shown in QLC+)'
           },
           channels: {
             type: 'array',
